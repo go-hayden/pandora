@@ -8,10 +8,30 @@ import (
 
 	merr "github.com/go-hayden-base/err"
 	"github.com/go-hayden-base/fs"
-	"github.com/go-hayden-base/str"
 )
 
-func (s *Pod) Index(root string, repos []string, exclude map[string]bool) error {
+const (
+	ENUM_POD_LEVEL_REPO = iota
+	ENUM_POD_LEVEL_MODULE
+	ENUM_POD_LEVEL_VERSION
+)
+
+type PodLevel int
+
+// ** Pod Impl **
+func (s *Pod) Print() {
+	for _, repo := range s.PodRepos {
+		println("\n======== " + repo.Name + "========")
+		for _, module := range repo.Modules {
+			println("->" + repo.Name)
+			for _, version := range module.Versions {
+				println(" |_" + version.Name + " [" + path.Join(version.Root, version.FileName) + "]")
+			}
+		}
+	}
+}
+
+func (s *Pod) index(root string, repos []string, filterFunc func(p string, level PodLevel) bool) error {
 	if !fs.DirectoryExists(root) {
 		return merr.NewErrMessage(merr.ErrCodeNotExist, "Pod根目录不存在["+root+"]")
 	}
@@ -36,7 +56,7 @@ func (s *Pod) Index(root string, repos []string, exclude map[string]bool) error 
 	}
 	c := make(chan error, len(podrepos))
 	for _, repo := range podrepos {
-		go goIndexRepo(repo, exclude, c)
+		go goIndexRepo(repo, filterFunc, c)
 	}
 	for i := 0; i < len(podrepos); i++ {
 		<-c
@@ -45,23 +65,8 @@ func (s *Pod) Index(root string, repos []string, exclude map[string]bool) error 
 	return nil
 }
 
-func (s *Pod) Print() {
-	for _, repo := range s.PodRepos {
-		println("\n======== " + repo.Name + "========")
-		for _, module := range repo.Modules {
-			println("->" + repo.Name)
-			for _, version := range module.Versions {
-				println(" |_" + version.Name + " [" + path.Join(version.Root, version.FileName) + "]")
-			}
-		}
-	}
-}
-
-func goIndexRepo(repo *PodRepo, exclude map[string]bool, c chan error) {
-	c <- repo.Index(exclude)
-}
-
-func (s *PodRepo) Index(exclude map[string]bool) error {
+// ** PodRepo Impl **
+func (s *PodRepo) index(filterFunc func(p string, level PodLevel) bool) error {
 	dirs, err := ioutil.ReadDir(s.Root)
 	if err != nil {
 		return merr.NewErr(merr.ErrCodeUnknown, err)
@@ -75,10 +80,15 @@ func (s *PodRepo) Index(exclude map[string]bool) error {
 		if f.Name() == ".git" {
 			continue
 		}
+
+		mp := path.Join(s.Root, f.Name())
+		if filterFunc != nil && filterFunc(mp, ENUM_POD_LEVEL_MODULE) {
+			continue
+		}
 		module := new(PodModule)
 		module.Name = f.Name()
-		module.Root = path.Join(s.Root, module.Name)
-		e := module.Index(exclude)
+		module.Root = mp
+		e := module.index(filterFunc)
 		if e == nil {
 			modules = append(modules, module)
 		}
@@ -90,7 +100,8 @@ func (s *PodRepo) Index(exclude map[string]bool) error {
 	return nil
 }
 
-func (s *PodModule) Index(exclude map[string]bool) error {
+// ** PodModule Impl **
+func (s *PodModule) index(filterFunc func(p string, level PodLevel) bool) error {
 	dirs, err := ioutil.ReadDir(s.Root)
 	if err != nil {
 		return merr.NewErr(merr.ErrCodeUnknown, err)
@@ -102,17 +113,13 @@ func (s *PodModule) Index(exclude map[string]bool) error {
 			continue
 		}
 		pwd := path.Join(s.Root, f.Name())
-		pwdMD5 := str.MD5(pwd)
-		if exclude != nil {
-			_, ok := exclude[pwdMD5]
-			if ok {
-				continue
-			}
+		if filterFunc != nil && filterFunc(pwd, ENUM_POD_LEVEL_VERSION) {
+			continue
 		}
 		version := new(PodModuleVersion)
 		version.Name = f.Name()
 		version.Root = pwd
-		e := version.Index()
+		e := version.index()
 		if e == nil {
 			versions = append(versions, version)
 		}
@@ -124,7 +131,8 @@ func (s *PodModule) Index(exclude map[string]bool) error {
 	return nil
 }
 
-func (s *PodModuleVersion) Index() error {
+// ** PodModuleVersion Impl **
+func (s *PodModuleVersion) index() error {
 	dirs, err := ioutil.ReadDir(s.Root)
 	if err != nil {
 		return merr.NewErr(merr.ErrCodeUnknown, err)
@@ -147,12 +155,13 @@ func (s *PodModuleVersion) Index() error {
 	return nil
 }
 
-func Index(podRoot string, repos []string, exclude map[string]bool, threadNum int, printLog bool) (*Pod, int, int, error) {
+// ** Func Public **
+func PodIndex(podRoot string, repos []string, threadNum int, printLog bool, filterFunc func(p string, level PodLevel) bool) (*Pod, int, int, error) {
 	if threadNum < 1 {
 		threadNum = 1
 	}
 	aPod := new(Pod)
-	err := aPod.Index(podRoot, repos, exclude)
+	err := aPod.index(podRoot, repos, filterFunc)
 	if err != nil {
 		return nil, 0, 0, err
 	}
@@ -187,4 +196,9 @@ func Index(podRoot string, repos []string, exclude map[string]bool, threadNum in
 		<-cPipe
 	}
 	return aPod, success, failure, nil
+}
+
+// ** Func Private **
+func goIndexRepo(repo *PodRepo, filterFunc func(p string, level PodLevel) bool, c chan error) {
+	c <- repo.index(filterFunc)
 }

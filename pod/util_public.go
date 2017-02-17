@@ -3,7 +3,15 @@ package pod
 import (
 	"regexp"
 	"strings"
+
+	ver "github.com/hashicorp/go-version"
 )
+
+const __REG_VERSION = `^\s*[0-9]+(\.\S+){0,}`
+
+func IsVersion(v string) bool {
+	return regexp.MustCompile(__REG_VERSION).MatchString(v)
+}
 
 const __REG_NOTE = `^\s*#.*`
 
@@ -17,6 +25,18 @@ const __REG_END = `^\s*end(\s+(#+.*){0,1}){0,1}$`
 func IsEnd(line string) bool {
 	reg := regexp.MustCompile(__REG_END)
 	return reg.MatchString(line)
+}
+
+func CompareVersion(a string, b string) int {
+	aVerA, e := ver.NewVersion(a)
+	if e != nil {
+		return -1
+	}
+	aVerB, e := ver.NewVersion(b)
+	if e != nil {
+		return 1
+	}
+	return aVerA.Compare(aVerB)
 }
 
 const __REG_SPEC_SOURCE = `\{\s*:\s*git\s*=>\s*('|")\S+('|")`
@@ -99,4 +119,97 @@ func Trim(line string, trims ...string) string {
 		line = reg.ReplaceAllString(line, "")
 	}
 	return line
+}
+
+func BaseModule(module string) string {
+	if strings.Index(module, "/") < 0 {
+		return module
+	}
+	return strings.Split(module, "/")[0]
+}
+
+func MaxVersion(constraint string, versions ...string) (string, error) {
+	if len(versions) == 0 {
+		return "", nil
+	}
+	var aConstraint ver.Constraints
+	var err error
+	if constraint != "" {
+		aConstraint, err = ver.NewConstraint(constraint)
+		if err != nil {
+			return "", err
+		}
+	}
+
+	var compares []string
+	if aConstraint != nil {
+		compares = make([]string, 0, len(versions))
+		for _, version := range versions {
+			aVer, e := ver.NewVersion(version)
+			if e != nil {
+				continue
+			}
+			if aConstraint.Check(aVer) {
+				compares = append(compares, version)
+			}
+		}
+	} else {
+		compares = versions
+	}
+	l := len(compares)
+	if l < 1 {
+		return "", nil
+	}
+
+	max := compares[0]
+	for index := 1; index < l; index++ {
+		nextVersion := compares[index]
+		verNext, err := ver.NewVersion(nextVersion)
+		if err != nil {
+			continue
+		}
+		verMax, err := ver.NewVersion(max)
+		if err != nil {
+			max = nextVersion
+			continue
+		}
+		if verNext.GreaterThan(verMax) {
+			max = nextVersion
+		}
+	}
+	return max, nil
+}
+
+func MatchVersionConstraint(constraint string, version string) bool {
+	aConstraint, err := ver.NewConstraint(constraint)
+	if err != nil {
+		return true
+	}
+	aVersion, err := ver.NewVersion(version)
+	if err != nil {
+		return true
+	}
+	return aConstraint.Check(aVersion)
+}
+
+func ContainsString(src []string, s string) bool {
+	c := false
+	for _, itme := range src {
+		if itme == s {
+			c = true
+			break
+		}
+	}
+	return c
+}
+
+func EnumerateModule(module string, f func(m string)) {
+	if f == nil {
+		return
+	}
+	f(module)
+	idx := strings.LastIndex(module, "/")
+	if idx > -1 {
+		EnumerateModule(module[:idx], f)
+	}
 }
