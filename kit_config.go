@@ -25,8 +25,10 @@ const (
 )
 
 type Config struct {
-	Workspace   string `json:"-" bson:"-"`
-	Environment int    `json:"-" bson:"-"`
+	Workspace   string              `json:"-" bson:"-"`
+	Environment int                 `json:"-" bson:"-"`
+	Graph       *ConfigHtmlTemplate `json:"-" bson:"-"`
+	Tree        *ConfigHtmlTemplate `json:"-" bson:"-"`
 
 	OutputDirectory string        `json:"output_directory,omitempty" bson:"output_directory,omitempty"`
 	PodRepoRoot     string        `json:"pod_repo_root,omitempty" bson:"pod_repo_root,omitempty"`
@@ -35,8 +37,15 @@ type Config struct {
 }
 
 type ConfigRepo struct {
-	Name    string   `json:"name,omitempty" bson:"name,omitempty"`
-	Exclude []string `json:"exclude,omitempty" bson:"exclude,omitempty"`
+	Name        string            `json:"name,omitempty" bson:"name,omitempty"`
+	Exclude     []string          `json:"exclude,omitempty" bson:"exclude,omitempty"`
+	Constraints map[string]string `json:"constraints,omitempty" bson:"constraints,omitempty"`
+}
+
+type ConfigHtmlTemplate struct {
+	HtmlPath string
+	CSSPaths []string
+	JSPaths  []string
 }
 
 func NewConfig() (*Config, error) {
@@ -58,11 +67,13 @@ func NewConfig() (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	config.Workspace = p
+
 	err = config.Check()
 	if err != nil {
 		return nil, err
 	}
-	config.Workspace = p
 	if config.OutputDirectory == "" {
 		config.OutputDirectory = path.Join(p, "output")
 	}
@@ -93,7 +104,57 @@ func (s *Config) Check() error {
 	} else if s.SpecThread > 20 {
 		s.SpecThread = 20
 	}
+
+	s.configGraphTemplate()
+	s.configTreeTemplate()
 	return nil
+}
+
+func (s *Config) configGraphTemplate() {
+	if s.Graph != nil {
+		return
+	}
+	s.Graph = s.newConfigHtmlTemplate("graph")
+}
+
+func (s *Config) configTreeTemplate() {
+	if s.Tree != nil {
+		return
+	}
+	s.Tree = s.newConfigHtmlTemplate("tree")
+}
+
+func (s *Config) newConfigHtmlTemplate(name string) *ConfigHtmlTemplate {
+	if name == "" {
+		return nil
+	}
+	graphTmpRoot := path.Join(s.Workspace, "template", name)
+	cssPath := path.Join(graphTmpRoot, "css")
+	jsPath := path.Join(graphTmpRoot, "js")
+	htmlPath := path.Join(graphTmpRoot, "index.html")
+	aHtmlTemplate := new(ConfigHtmlTemplate)
+	if fs.FileExists(htmlPath) {
+		aHtmlTemplate.HtmlPath = htmlPath
+		aHtmlTemplate.CSSPaths = make([]string, 0, 2)
+		aHtmlTemplate.JSPaths = make([]string, 0, 2)
+		if fs.DirectoryExists(cssPath) {
+			fs.ListDirectory(cssPath, false, func(file fs.FileInfo, err error) {
+				if file.IsDir() || path.Ext(file.Name()) != ".css" {
+					return
+				}
+				aHtmlTemplate.CSSPaths = append(aHtmlTemplate.CSSPaths, file.FilePath())
+			})
+		}
+		if fs.DirectoryExists(jsPath) {
+			fs.ListDirectory(jsPath, false, func(file fs.FileInfo, err error) {
+				if file.IsDir() || path.Ext(file.Name()) != ".js" {
+					return
+				}
+				aHtmlTemplate.JSPaths = append(aHtmlTemplate.JSPaths, file.FilePath())
+			})
+		}
+	}
+	return aHtmlTemplate
 }
 
 func (s *Config) IsDebug() bool {

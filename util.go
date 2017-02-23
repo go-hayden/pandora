@@ -9,7 +9,7 @@ import (
 	"strings"
 )
 
-func currentDir() (string, bool) {
+func CurrentDir() (string, bool) {
 	dir, err := filepath.Abs(filepath.Dir(os.Args[0]))
 	if err != nil {
 		return "", false
@@ -17,11 +17,20 @@ func currentDir() (string, bool) {
 	return dir, true
 }
 
-func absolutePath(p string) string {
+func AbsPath(dir string, p string) string {
 	p = strings.TrimSpace(p)
-	dir, ok := currentDir()
-	if ok && !path.IsAbs(p) {
-		p = path.Join(dir, p)
+	if path.IsAbs(p) {
+		return p
+	}
+
+	dir = strings.TrimSpace(dir)
+	if dir != "" {
+		return path.Join(dir, p)
+	}
+
+	d, ok := CurrentDir()
+	if ok {
+		p = path.Join(d, p)
 	}
 	return p
 }

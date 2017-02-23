@@ -9,6 +9,8 @@ type GraphModule struct {
 	NewestVersion   string
 	IsCommon        bool
 	IsNew           bool
+	IsImplicit      bool
 	IsLocal         bool
 	Depends         []*DependBase
+	flattenDepends  []string
 }

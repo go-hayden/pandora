@@ -22,6 +22,7 @@ func cmd_sync(args *Args) {
 	}
 
 	excludeModuleMap := readExcluedModule()
+	constraintMap := readConstraintMap()
 
 	filerFunc := func(p string, level pod.PodLevel) bool {
 		switch level {
@@ -38,6 +39,21 @@ func cmd_sync(args *Args) {
 			md5 := str.MD5(p)
 			if _, ok := excluedKeyMap[md5]; ok {
 				return true
+			}
+			if constraintMap != nil {
+				tmp := p
+				v := path.Base(tmp)
+				tmp = path.Dir(tmp)
+				mn := path.Base(tmp)
+				tmp = path.Dir(tmp)
+				rn := path.Base(tmp)
+				if constraint, ok := constraintMap[rn]; ok {
+					if constraintStr, ok := constraint[mn]; ok && strings.TrimSpace(constraintStr) != "" {
+						if !pod.MatchVersionConstraint(constraintStr, v) {
+							return true
+						}
+					}
+				}
 			}
 		}
 		return false
@@ -94,6 +110,14 @@ func readExcluedModule() map[string]map[string]bool {
 		for _, m := range repo.Exclude {
 			r[m] = true
 		}
+	}
+	return res
+}
+
+func readConstraintMap() map[string]map[string]string {
+	res := make(map[string]map[string]string)
+	for _, repo := range _Conf.PodRepos {
+		res[repo.Name] = repo.Constraints
 	}
 	return res
 }

@@ -38,7 +38,8 @@ func init() {
 	_Args.RegisterFunc("-sync", cmd_sync)
 	_Args.RegisterFunc("-dep", cmd_depend)
 	_Args.RegisterFunc("-up", cmd_upgrade)
-
+	_Args.RegisterFunc("-origin", cmd_origin)
+	_Args.RegisterFunc("-sql", cmd_exec_sql)
 	if _Conf.IsDebug() {
 		_Args.RegisterFunc("-test_args", cmd_test_args)
 		_Args.RegisterFunc("-test_spec", cmd_test_spec)

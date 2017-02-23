@@ -2,12 +2,12 @@ package pod
 
 import (
 	"os/exec"
-
 	"path"
 
 	yaml "gopkg.in/yaml.v2"
 )
 
+// ** Podfile Impl **
 func (s *Podfile) HasDepend(targets []string, name string) bool {
 	has := false
 	for _, aTarget := range s.Targets {
@@ -50,6 +50,17 @@ func (s *Podfile) GetDependVersion(targets []string, depend string) (string, boo
 	return max, exist
 }
 
+func (s *Podfile) EnumerateAllDepends(f func(target, depend, version string)) {
+	if f == nil {
+		return
+	}
+	for _, aTarget := range s.Targets {
+		for _, aDepends := range aTarget.Depends {
+			f(aTarget.Name, aDepends.N, aDepends.V)
+		}
+	}
+}
+
 func (s *Podfile) TargetWithName(name string) *Target {
 	for _, target := range s.Targets {
 		if target.Name == name {
@@ -59,6 +70,16 @@ func (s *Podfile) TargetWithName(name string) *Target {
 	return nil
 }
 
+func (s *Podfile) Print() {
+	for _, target := range s.Targets {
+		println("-> " + target.Name)
+		for _, depend := range target.Depends {
+			println("   -", depend.Name, depend.Version, depend.Type, depend.SpecPath)
+		}
+	}
+}
+
+// ** Target Impl **
 func (s *Target) DepndWithName(name string) *Depend {
 	for _, dep := range s.Depends {
 		if dep.Name() == name {
@@ -88,15 +109,7 @@ func (s *Target) HasDepend(name string) bool {
 	return has
 }
 
-func (s *Podfile) Print() {
-	for _, target := range s.Targets {
-		println("-> " + target.Name)
-		for _, depend := range target.Depends {
-			println("   -", depend.Name, depend.Version, depend.Type, depend.SpecPath)
-		}
-	}
-}
-
+// ** Depend Impl **
 func (s *Depend) Subdepends() []*DependBase {
 	return s.SpecDepends
 }
@@ -105,6 +118,7 @@ func (s *Depend) IsLocal() bool {
 	return s.SpecPath != ""
 }
 
+// ** Func Public **
 func NewPodfile(filePath string, rel bool) (*Podfile, error) {
 	b, e := exec.Command("pod", "ipc", "podfile", filePath).Output()
 	if e != nil {
@@ -174,6 +188,7 @@ func FillPodfile(podfile *Podfile, threadNum int, printLog bool) {
 	}
 }
 
+// ** Func Private **
 func getAllDependsFromSpec(spec *Spec) []*DependBase {
 	if spec == nil {
 		return nil

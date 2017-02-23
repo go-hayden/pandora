@@ -128,6 +128,14 @@ func BaseModule(module string) string {
 	return strings.Split(module, "/")[0]
 }
 
+func ModuleBase(s string) (string, bool) {
+	tmp := strings.Split(s, "/")
+	if len(tmp) < 2 {
+		return "", false
+	}
+	return strings.Join(tmp[:len(tmp)-1], "/"), true
+}
+
 func MaxVersion(constraint string, versions ...string) (string, error) {
 	if len(versions) == 0 {
 		return "", nil
