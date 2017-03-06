@@ -4,6 +4,8 @@ import (
 	"os/exec"
 	"path"
 
+	fdt "github.com/go-hayden-base/foundation"
+	ver "github.com/go-hayden-base/version"
 	yaml "gopkg.in/yaml.v2"
 )
 
@@ -11,7 +13,7 @@ import (
 func (s *Podfile) HasDepend(targets []string, name string) bool {
 	has := false
 	for _, aTarget := range s.Targets {
-		if targets != nil && !ContainsString(targets, aTarget.Name) {
+		if targets != nil && !fdt.SliceContainsStr(aTarget.Name, targets) {
 			continue
 		}
 		has = aTarget.HasDepend(name)
@@ -26,7 +28,7 @@ func (s *Podfile) GetDependVersion(targets []string, depend string) (string, boo
 	found := make([]string, 0, 5)
 	exist := false
 	for _, aTarget := range s.Targets {
-		if targets != nil && !ContainsString(targets, aTarget.Name) {
+		if targets != nil && !fdt.SliceContainsStr(aTarget.Name, targets) {
 			continue
 		}
 		aDepend := aTarget.FuzzyDepndWithName(depend)
@@ -43,7 +45,7 @@ func (s *Podfile) GetDependVersion(targets []string, depend string) (string, boo
 	if l < 1 {
 		return "", exist
 	}
-	max, err := MaxVersion("", found...)
+	max, err := ver.MaxVersion("", found...)
 	if err != nil {
 		return found[0], exist
 	}
@@ -91,7 +93,7 @@ func (s *Target) DepndWithName(name string) *Depend {
 
 func (s *Target) FuzzyDepndWithName(name string) *Depend {
 	for _, dep := range s.Depends {
-		if BaseModule(dep.Name()) == BaseModule(name) {
+		if fdt.StrSplitFirst(dep.Name(), "/") == fdt.StrSplitFirst(name, "/") {
 			return dep
 		}
 	}

@@ -1,12 +1,10 @@
 package pod
 
 import (
+	"errors"
 	"io/ioutil"
 	"path"
 
-	"errors"
-
-	merr "github.com/go-hayden-base/err"
 	"github.com/go-hayden-base/fs"
 )
 
@@ -33,10 +31,10 @@ func (s *Pod) Print() {
 
 func (s *Pod) index(root string, repos []string, filterFunc func(p string, level PodLevel) bool) error {
 	if !fs.DirectoryExists(root) {
-		return merr.NewErrMessage(merr.ErrCodeNotExist, "Pod根目录不存在["+root+"]")
+		return errors.New("Pod根目录不存在[" + root + "]")
 	}
 	if repos == nil || len(repos) == 0 {
-		return merr.NewErrMessage(merr.ErrCodeParamInvalid, "没有索引的仓库！")
+		return errors.New("没有索引的仓库！")
 	}
 	podrepos := make([]*PodRepo, 0, len(repos))
 	for _, rn := range repos {
@@ -47,7 +45,7 @@ func (s *Pod) index(root string, repos []string, filterFunc func(p string, level
 			reporoot = path.Join(root, rn)
 		}
 		if !fs.DirectoryExists(reporoot) {
-			return merr.NewErrMessage(merr.ErrCodeNotExist, "仓库不存在["+reporoot+"]")
+			return errors.New("仓库不存在[" + reporoot + "]")
 		}
 		repo := new(PodRepo)
 		repo.Name = rn
@@ -69,7 +67,7 @@ func (s *Pod) index(root string, repos []string, filterFunc func(p string, level
 func (s *PodRepo) index(filterFunc func(p string, level PodLevel) bool) error {
 	dirs, err := ioutil.ReadDir(s.Root)
 	if err != nil {
-		return merr.NewErr(merr.ErrCodeUnknown, err)
+		return err
 	}
 	l := len(dirs)
 	modules := make([]*PodModule, 0, l)
@@ -104,7 +102,7 @@ func (s *PodRepo) index(filterFunc func(p string, level PodLevel) bool) error {
 func (s *PodModule) index(filterFunc func(p string, level PodLevel) bool) error {
 	dirs, err := ioutil.ReadDir(s.Root)
 	if err != nil {
-		return merr.NewErr(merr.ErrCodeUnknown, err)
+		return err
 	}
 	l := len(dirs)
 	versions := make([]*PodModuleVersion, 0, l)
@@ -135,7 +133,7 @@ func (s *PodModule) index(filterFunc func(p string, level PodLevel) bool) error 
 func (s *PodModuleVersion) index() error {
 	dirs, err := ioutil.ReadDir(s.Root)
 	if err != nil {
-		return merr.NewErr(merr.ErrCodeUnknown, err)
+		return err
 	}
 	for _, fi := range dirs {
 		if fi.IsDir() {

@@ -4,6 +4,9 @@ import (
 	"bytes"
 	"strconv"
 	"strings"
+
+	fdt "github.com/go-hayden-base/foundation"
+	ver "github.com/go-hayden-base/version"
 )
 
 // ** GraphPodfile Impl **
@@ -18,8 +21,7 @@ func (s GraphPodfile) Check() []*DependBase {
 				if depModule.UseVersion() == "" || depModule.UseVersion() == "*" || dep.Version() == "" {
 					continue
 				}
-				ok = MatchVersionConstraint(dep.Version(), depModule.UseVersion())
-				if ok {
+				if ver.MatchVersionConstraint(dep.V, depModule.UseVersion()) {
 					continue
 				}
 			}
@@ -54,12 +56,12 @@ func (s GraphPodfile) banlanceVersion() {
 		if strings.Index(moduleName, "/") < 0 {
 			continue
 		}
-		baseName := BaseModule(moduleName)
+		baseName := fdt.StrSplitFirst(moduleName, "/")
 		currentVersion, _ := foundMap[baseName]
 		useVersion := aModule.UseVersion()
 		if currentVersion != "" && useVersion != "" {
 			// 对比版本
-			if maxVersion, e := MaxVersion("", currentVersion, useVersion); e != nil {
+			if maxVersion, e := ver.MaxVersion("", currentVersion, useVersion); e != nil {
 				foundMap[baseName] = useVersion
 			} else {
 				foundMap[baseName] = maxVersion
@@ -77,7 +79,7 @@ func (s GraphPodfile) banlanceVersion() {
 		if rootModule, ok := s[moduleName]; ok {
 			rootModuleVersion := rootModule.UseVersion()
 			if rootModuleVersion != "" && version != "" {
-				if maxVersion, e := MaxVersion("", rootModuleVersion, version); e == nil {
+				if maxVersion, e := ver.MaxVersion("", rootModuleVersion, version); e == nil {
 					version = maxVersion
 				}
 			} else if version == "" {
@@ -88,7 +90,7 @@ func (s GraphPodfile) banlanceVersion() {
 			continue
 		}
 		for moduleNameOther, aDependOther := range s {
-			if BaseModule(moduleNameOther) != moduleName {
+			if fdt.StrSplitFirst(moduleNameOther, "/") != moduleName {
 				continue
 			}
 			if aDependOther.UpdateToVersion == "" {
@@ -105,7 +107,7 @@ func (s *GraphModule) UpgradeTag() string {
 	if s.UpdateToVersion == "" || s.Version == "" {
 		return "-"
 	} else {
-		c := CompareVersion(s.Version, s.UpdateToVersion)
+		c := ver.CompareVersion(s.Version, s.UpdateToVersion)
 		switch c {
 		case -1:
 			return "up"
@@ -123,7 +125,7 @@ func (s *GraphModule) UseVersion() string {
 	} else if len(s.NewestVersion) == 0 {
 		return s.UpdateToVersion
 	}
-	c := CompareVersion(s.UpdateToVersion, s.NewestVersion)
+	c := ver.CompareVersion(s.UpdateToVersion, s.NewestVersion)
 	if c > 0 {
 		return s.NewestVersion
 	} else {

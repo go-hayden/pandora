@@ -1,16 +1,15 @@
 package pod
 
 import (
+	"encoding/json"
 	"errors"
 	"io/ioutil"
 	"os/exec"
 	"path"
+	"regexp"
 	"strings"
 
-	"encoding/json"
-
-	"regexp"
-
+	fdt "github.com/go-hayden-base/foundation"
 	"github.com/go-hayden-base/fs"
 )
 
@@ -87,7 +86,7 @@ func (s *Spec) IsDefaultSpec(name string) bool {
 
 func (s *Spec) GetAllDepends(name string) map[string]string {
 	s.HashSpec()
-	baseName := BaseModule(name)
+	baseName := fdt.StrSplitFirst(name, "/")
 	if baseName == "" || baseName != s.Name {
 		return nil
 	}
