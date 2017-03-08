@@ -14,6 +14,8 @@ import (
 
 	"strconv"
 
+	"path/filepath"
+
 	"github.com/go-hayden-base/fs"
 )
 
@@ -29,6 +31,7 @@ type Config struct {
 	Environment int                 `json:"-" bson:"-"`
 	Graph       *ConfigHtmlTemplate `json:"-" bson:"-"`
 	Tree        *ConfigHtmlTemplate `json:"-" bson:"-"`
+	Templates   map[string]string   `json:"-" bson:"-"`
 
 	OutputDirectory string        `json:"output_directory,omitempty" bson:"output_directory,omitempty"`
 	PodRepoRoot     string        `json:"pod_repo_root,omitempty" bson:"pod_repo_root,omitempty"`
@@ -107,6 +110,7 @@ func (s *Config) Check() error {
 
 	s.configGraphTemplate()
 	s.configTreeTemplate()
+	s.generateTemplateIfNeed()
 	return nil
 }
 
@@ -155,6 +159,20 @@ func (s *Config) newConfigHtmlTemplate(name string) *ConfigHtmlTemplate {
 		}
 	}
 	return aHtmlTemplate
+}
+
+func (s *Config) generateTemplateIfNeed() {
+	s.Templates = make(map[string]string)
+	temp := filepath.Join(s.Workspace, "template")
+	if !fs.DirectoryExists(temp) {
+		return
+	}
+	fs.ListDirectory(temp, false, func(file fs.FileInfo, err error) {
+		if err != nil || !file.IsDir() {
+			return
+		}
+		s.Templates[file.Name()] = file.FilePath()
+	})
 }
 
 func (s *Config) IsDebug() bool {

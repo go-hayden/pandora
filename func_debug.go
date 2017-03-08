@@ -1,10 +1,10 @@
 package main
 
-import "pandora/pod"
+import "github.com/go-hayden-base/pod"
 
 func cmd_test_spec(aArgs *Args) {
 	p := aArgs.GetFirstSubArgs("--p")
-	spec, e := pod.ReadSpec(p, true)
+	spec, e := pod.ReadSpec(p)
 	if e != nil {
 		printRed(e.Error(), false)
 	} else {

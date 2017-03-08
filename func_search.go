@@ -4,30 +4,31 @@ import (
 	"bytes"
 	"database/sql"
 	"errors"
-	"pandora/pod"
 	"strings"
 
 	"encoding/json"
 
 	"fmt"
 
-	ver "github.com/hashicorp/go-version"
+	fdt "github.com/go-hayden-base/foundation"
+	"github.com/go-hayden-base/pod"
+	ver "github.com/go-hayden-base/version"
 )
-
-func moduleAndVersion(aArgs *Args) (string, string, error) {
-	args := aArgs.GetSubargsMain()
-	l := len(args)
-	if l < 2 {
-		return "", "", errors.New("参数错误!")
-	}
-	return args[0], args[1], nil
-}
 
 func cmd_depend(aArgs *Args) {
 	module, version, err := moduleAndVersion(aArgs)
 	if err != nil {
 		printRed(err.Error(), true)
 		return
+	}
+
+	if version == "" {
+		v, err := queryNewestVersionWithConstraint(module, "")
+		if err != nil {
+			printRed(err.Error(), false)
+			return
+		}
+		version = v
 	}
 
 	// 打印依赖列表
@@ -52,6 +53,15 @@ func cmd_origin(aArgs *Args) {
 	if err != nil {
 		printRed(err.Error(), true)
 		return
+	}
+
+	if version == "" {
+		v, err := queryNewestVersionWithConstraint(module, "")
+		if err != nil {
+			printRed(err.Error(), false)
+			return
+		}
+		version = v
 	}
 
 	specJson, repoList, err := queryOriginalSpec(module, version)
@@ -102,7 +112,7 @@ func queryDepends(module string, version string) ([]*pod.DependBase, string, err
 	cap := l/2 + 1
 	resHead := make([]*pod.DependBase, 0, cap)
 	resFoot := make([]*pod.DependBase, 0, cap)
-	baseModule := pod.BaseModule(module) + "/"
+	baseModule := fdt.StrSplitFirst(module, "/") + "/"
 
 	for keya, _ := range deps {
 		if !strings.HasPrefix(keya, baseModule) {
@@ -141,7 +151,7 @@ func queryOriginalSpec(module, version string) (string, string, error) {
 	if module == "" || version == "" {
 		return "", "", errors.New("模块名和版本号不能为空！")
 	}
-	baseModule := pod.BaseModule(module)
+	baseModule := fdt.StrSplitFirst(module, "/")
 	var rows *sql.Rows
 	var e error
 	if rows, e = _DB.Query(_SQL_QUERY_SPEC, baseModule, version); e != nil {
@@ -162,20 +172,33 @@ func queryOriginalSpec(module, version string) (string, string, error) {
 	return specJson, buffer.String(), nil
 }
 
-func queryNewestVersion(module string, constraint string) (string, error) {
-	versions, e := queryVersion(module, constraint)
+func queryNewestVersionWithConstraint(module string, constraint string) (string, error) {
+	versions, e := queryVersionsWithConstraint(module, constraint)
 	if e != nil {
 		return "", e
 	}
-	return pod.MaxVersion("", versions...)
+	return ver.MaxVersion("", versions...)
 }
 
-func queryVersion(module string, contraint string) ([]string, error) {
-	var aConstraint ver.Constraints
-	if len(contraint) > 0 {
-		aConstraint, _ = ver.NewConstraint(contraint)
+func queryNewestVersionWithConstraints(module string, constraints []string) (string, error) {
+	versions, e := queryVersionsWithConstraints(module, constraints)
+	if e != nil {
+		return "", e
 	}
-	rows, e := _DB.Query(_SQL_QUERY_VERSIONS, pod.BaseModule(module))
+	return ver.MaxVersion("", versions...)
+}
+
+func queryVersionsWithConstraint(module string, contraint string) ([]string, error) {
+	if contraint == "" {
+		return queryVersionsWithConstraints(module, nil)
+	} else {
+		return queryVersionsWithConstraints(module, []string{contraint})
+	}
+}
+
+func queryVersionsWithConstraints(module string, contraints []string) ([]string, error) {
+	baseName := fdt.StrSplitFirst(module, "/")
+	rows, e := _DB.Query(_SQL_QUERY_VERSIONS, baseName)
 	if e != nil {
 		return nil, e
 	}
@@ -186,17 +209,37 @@ func queryVersion(module string, contraint string) ([]string, error) {
 		if e != nil {
 			continue
 		}
-		if aConstraint != nil {
-			aVer, e := ver.NewVersion(v)
-			if e != nil || !aConstraint.Check(aVer) {
-				continue
-			}
+		if len(contraints) > 0 && !ver.MatchVersionConstrains(contraints, v) {
+			continue
 		}
 		m[v] = true
 	}
 	res := make([]string, 0, len(m))
-	for v, _ := range m {
+	for v := range m {
 		res = append(res, v)
 	}
 	return res, nil
+}
+
+func versionify(module, version string) string {
+	if ver.IsVersion(version) {
+		return version
+	}
+
+	newVersion, err := queryNewestVersionWithConstraint(module, version)
+	if err != nil {
+		return ""
+	}
+	return newVersion
+}
+
+func moduleAndVersion(aArgs *Args) (string, string, error) {
+	args := aArgs.GetSubargsMain()
+	l := len(args)
+	if l < 1 {
+		return "", "", errors.New("参数错误!")
+	} else if l < 2 {
+		return args[0], "", nil
+	}
+	return args[0], args[1], nil
 }

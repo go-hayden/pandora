@@ -3,14 +3,15 @@ package main
 import (
 	"database/sql"
 	"os"
-	"pandora/pod"
 	"path"
-	"strconv"
 	"strings"
+	"tb/str"
 	"time"
 
 	cp "github.com/fatih/color"
-	"github.com/go-hayden-base/str"
+	fdt "github.com/go-hayden-base/foundation"
+	"github.com/go-hayden-base/pod"
+	ver "github.com/go-hayden-base/version"
 )
 
 func cmd_sync(args *Args) {
@@ -49,7 +50,7 @@ func cmd_sync(args *Args) {
 				rn := path.Base(tmp)
 				if constraint, ok := constraintMap[rn]; ok {
 					if constraintStr, ok := constraint[mn]; ok && strings.TrimSpace(constraintStr) != "" {
-						if !pod.MatchVersionConstraint(constraintStr, v) {
+						if !ver.MatchVersionConstraint(constraintStr, v) {
 							return true
 						}
 					}
@@ -60,21 +61,47 @@ func cmd_sync(args *Args) {
 	}
 
 	repos := readRepos()
-	println("开始索引Pod...")
-	p, success, failure, e := pod.PodIndex(_Conf.PodRepoRoot, repos, _Conf.SpecThread, true, filerFunc)
+	println("开始索引Pod ...")
+	aPod, e := pod.PodIndex(_Conf.PodRepoRoot, repos, filerFunc)
 	if e != nil {
 		cp.Red(e.Error())
 		return
 	}
-	if len(p.PodRepos) == 0 {
+	if len(aPod.PodRepos) == 0 {
 		println("暂时没有需要更新的Pod，请尝试执行pod update更新指定仓库后在尝试索引!")
 		return
 	}
-	println("解析成功：" + strconv.Itoa(success) + " 解析失败：" + strconv.Itoa(failure))
+	all := 0
+	resolveSuccess := 0
+	resolveLogFunc := func(success bool, msg string) {
+		all++
+		if success {
+			resolveSuccess++
+			println(msg)
+		} else {
+			printRed(msg, false)
+		}
+	}
 
-	println("开始同步到数据库...")
-	suc, fail := syncToDB(p)
-	println("同步数据： 成功 " + strconv.Itoa(suc) + " 条， 失败 " + strconv.Itoa(fail) + " 条")
+	current := time.Now()
+	saveSuccess := 0
+	saveFunc := func(specs []*pod.Spec) {
+		saveSuccess += save(specs, &current)
+	}
+
+	println("开始解析Podspec ...")
+	pod.ResolvePodSpecs(aPod, _Conf.SpecThread, saveFunc, resolveLogFunc)
+
+	resolveFail := all - resolveSuccess
+	saveFail := resolveSuccess - saveSuccess
+
+	println("\n====== Summary ======")
+	println("  解析总数:", all)
+	println("  解析成功:", resolveSuccess)
+	println("  解析失败:", resolveFail)
+	println("  同步成功:", saveSuccess)
+	println("  同步失败:", saveFail)
+	println("=====================\n")
 }
 
 // ** 前期数据 **
@@ -132,80 +159,64 @@ func readRepos() []string {
 
 const __STR_DB_UNQ_ERR = `UNIQUE constraint failed:`
 
-func syncToDB(p *pod.Pod) (int, int) {
+func save(specs []*pod.Spec, current *time.Time) int {
 	tx, e := _DB.Begin()
 	if e != nil {
 		printRed(e.Error(), false)
-		return 0, 0
+		return 0
 	}
 	repoStmt, e := tx.Prepare(_SQL_INSERT_REPO)
 	if e != nil {
 		printRed(e.Error(), false)
-		return 0, 0
+		return 0
 	}
 	defer repoStmt.Close()
 
 	logStmt, e := tx.Prepare(_SQLINSERT_LOG)
 	if e != nil {
 		printRed(e.Error(), false)
-		return 0, 0
+		return 0
 	}
 	defer logStmt.Close()
-
-	currentTime := time.Now()
-	var suc, fail int
-	joinPod(p, func(k string, r string, m string, v string, p string, spec *pod.Spec) {
+	suc := 0
+	for _, aSpec := range specs {
+		k, r, m, v := flattenSpec(aSpec)
 		json := ""
-		if spec != nil {
-			if b, e := spec.JSON(); e == nil && b != nil {
-				json = string(b)
-			}
+		if b, e := aSpec.JSON(); e == nil && b != nil {
+			json = string(b)
 		}
-		if _, e := repoStmt.Exec(k, r, m, v, p, json, currentTime); e != nil {
+		if _, e := repoStmt.Exec(k, r, m, v, aSpec.FilePath, json, current); e != nil {
 			if strings.HasPrefix(e.Error(), __STR_DB_UNQ_ERR) {
-				println("Warn: 重复主键 { key: " + k + ", path: " + p + " }")
-				return
+				println("Warn: 重复主键 { key: " + k + ", path: " + aSpec.FilePath + " }")
+				continue
 			} else {
 				cp.Red(e.Error())
 				tx.Rollback()
 				os.Exit(1)
 			}
-			fail++
 		} else {
 			suc++
 		}
-	})
+	}
 
-	_, e = logStmt.Exec(currentTime)
+	_, e = logStmt.Exec(current)
 	if e != nil {
 		printRed(e.Error(), false)
 		tx.Rollback()
-		return 0, 0
+		return 0
 	}
 
 	tx.Commit()
-	return suc, fail
+	return suc
 }
 
-type funcJoinPodCallback func(k string, r string, m string, v string, p string, spec *pod.Spec)
-
-func joinPod(p *pod.Pod, f funcJoinPodCallback) {
-	if p == nil || f == nil {
-		return
-	}
-	for _, repo := range p.PodRepos {
-		for _, module := range repo.Modules {
-			for _, version := range module.Versions {
-				key := str.MD5(version.Root)
-				specPath := path.Join(version.Root, version.FileName)
-				var spec *pod.Spec
-				if version.Err != nil {
-					println("Warn: 解析失败->" + specPath + " 原因->" + version.Err.Error())
-				} else {
-					spec = version.Podspec
-				}
-				f(key, repo.Name, module.Name, version.Name, specPath, spec)
-			}
-		}
-	}
+func flattenSpec(aSpec *pod.Spec) (string, string, string, string) {
+	root := path.Dir(aSpec.FilePath)
+	k := fdt.StrMD5(root)
+	v := path.Base(root)
+	root = path.Dir(root)
+	m := path.Base(root)
+	root = path.Dir(root)
+	r := path.Base(root)
+	return k, r, m, v
 }
